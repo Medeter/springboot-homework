@@ -55,17 +55,44 @@ public class StudentController {
 
     // 1. GET all students
     @GetMapping("/student")
-    public List<Student> getAllStudents() {
-        return studentService.getAllStudents();
+    public ResponseEntity<?> getAllStudents(
+            @RequestParam(required = false) String sortBy,
+            @RequestParam(required = false) String sortDir) {
+        
+        try {
+            List<Student> students;
+            String message;
+            
+            if (sortBy != null && !sortBy.trim().isEmpty()) {
+                students = studentService.getAllStudentsOrderBy(sortBy.trim(), sortDir);
+                message = "✅ แสดงนักเรียนทั้งหมดเรียงตาม " + sortBy + " (" + (sortDir != null ? sortDir : "asc") + ")";
+            } else {
+                students = studentService.getAllStudents();
+                message = "✅ แสดงนักเรียนทั้งหมด";
+            }
+            
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("message", message);
+            result.put("data", students);
+            result.put("count", students.size());
+            
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                .body(new StudentResponse(false, "❌ เกิดข้อผิดพลาดในการดึงข้อมูล: " + e.getMessage()));
+        }
     }
     
-    // 1.1 GET students by age range (Query Parameters)
+    // 1.6 GET students by age range (Query Parameters) - Enhanced
     @GetMapping("/student/age")
     public ResponseEntity<?> getStudentsByAge(
             @RequestParam(required = false) Integer minAge,
             @RequestParam(required = false) Integer maxAge,
             @RequestParam(required = false) Integer exactAge,
-            @RequestParam(required = false) String name) {
+            @RequestParam(required = false) String name,
+            @RequestParam(required = false) String sortBy,
+            @RequestParam(required = false) String sortDir) {
         
         try {
             List<Student> students;
@@ -98,6 +125,12 @@ public class StudentController {
                 message = "✅ แสดงนักเรียนทั้งหมด";
             }
             
+            // เรียงลำดับถ้าระบุ
+            if (sortBy != null && !sortBy.trim().isEmpty()) {
+                students = applySort(students, sortBy.trim(), sortDir);
+                message += " (เรียงตาม " + sortBy + " " + (sortDir != null ? sortDir : "asc") + ")";
+            }
+            
             Map<String, Object> result = new HashMap<>();
             result.put("success", true);
             result.put("message", message);
@@ -111,7 +144,187 @@ public class StudentController {
         }
     }
     
-    // 1.2 GET student by ID
+    // 1.2 GET students with comprehensive filters
+    @GetMapping("/student/filter")
+    public ResponseEntity<?> getStudentsWithFilters(
+            @RequestParam(required = false) String name,
+            @RequestParam(required = false) String email,
+            @RequestParam(required = false) Integer minAge,
+            @RequestParam(required = false) Integer maxAge,
+            @RequestParam(required = false) Integer exactAge,
+            @RequestParam(required = false) String phone,
+            @RequestParam(required = false) String sortBy,
+            @RequestParam(required = false) String sortDir) {
+        
+        try {
+            List<Student> students;
+            StringBuilder messageBuilder = new StringBuilder("✅ ค้นหานักเรียน");
+            List<String> filters = new ArrayList<>();
+            
+            // ใช้ comprehensive filter
+            students = studentService.findStudentsWithFilters(
+                name != null && !name.trim().isEmpty() ? name.trim() : null,
+                email != null && !email.trim().isEmpty() ? email.trim() : null,
+                exactAge != null ? exactAge : minAge,
+                exactAge != null ? exactAge : maxAge,
+                exactAge,
+                phone != null && !phone.trim().isEmpty() ? phone.trim() : null
+            );
+            
+            // สร้างข้อความอธิบายการค้นหา
+            if (name != null && !name.trim().isEmpty()) {
+                filters.add("ชื่อ '" + name + "'");
+            }
+            if (email != null && !email.trim().isEmpty()) {
+                filters.add("อีเมล '" + email + "'");
+            }
+            if (exactAge != null) {
+                filters.add("อายุ " + exactAge + " ปี");
+            } else if (minAge != null && maxAge != null) {
+                filters.add("อายุ " + minAge + "-" + maxAge + " ปี");
+            } else if (minAge != null) {
+                filters.add("อายุ " + minAge + " ปีขึ้นไป");
+            } else if (maxAge != null) {
+                filters.add("อายุไม่เกิน " + maxAge + " ปี");
+            }
+            if (phone != null && !phone.trim().isEmpty()) {
+                filters.add("เบอร์โทร '" + phone + "'");
+            }
+            
+            if (!filters.isEmpty()) {
+                messageBuilder.append("ด้วยเงื่อนไข: ").append(String.join(", ", filters));
+            } else {
+                messageBuilder.append("ทั้งหมด");
+            }
+            
+            // เรียงลำดับถ้าระบุ
+            if (sortBy != null && !sortBy.trim().isEmpty()) {
+                students = applySort(students, sortBy.trim(), sortDir);
+                messageBuilder.append(" (เรียงตาม ").append(sortBy).append(" ").append(sortDir != null ? sortDir : "asc").append(")");
+            }
+            
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("message", messageBuilder.toString());
+            result.put("data", students);
+            result.put("count", students.size());
+            result.put("filters_applied", filters);
+            
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                .body(new StudentResponse(false, "❌ เกิดข้อผิดพลาดในการค้นหา: " + e.getMessage()));
+        }
+    }
+    
+    // 1.3 GET students by name (various search modes)
+    @GetMapping("/student/name")
+    public ResponseEntity<?> getStudentsByName(
+            @RequestParam String name,
+            @RequestParam(required = false, defaultValue = "contains") String mode) {
+        
+        try {
+            List<Student> students;
+            String message;
+            
+            switch (mode.toLowerCase()) {
+                case "starts":
+                    students = studentService.findStudentsByNameStartingWith(name);
+                    message = "✅ ค้นหานักเรียนที่ชื่อขึ้นต้นด้วย '" + name + "'";
+                    break;
+                case "ends":
+                    students = studentService.findStudentsByNameEndingWith(name);
+                    message = "✅ ค้นหานักเรียนที่ชื่อลงท้ายด้วย '" + name + "'";
+                    break;
+                case "contains":
+                default:
+                    students = studentService.findStudentsByNameContaining(name);
+                    message = "✅ ค้นหานักเรียนที่ชื่อมี '" + name + "'";
+                    break;
+            }
+            
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("message", message);
+            result.put("data", students);
+            result.put("count", students.size());
+            result.put("search_mode", mode);
+            
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                .body(new StudentResponse(false, "❌ เกิดข้อผิดพลาดในการค้นหา: " + e.getMessage()));
+        }
+    }
+    
+    // 1.4 GET students by phone
+    @GetMapping("/student/phone")
+    public ResponseEntity<?> getStudentsByPhone(@RequestParam String phone) {
+        try {
+            List<Student> students;
+            String message;
+            
+            try {
+                // ลองแปลงเป็น long ก่อน (ค้นหาแบบตรงตัว)
+                long phoneNumber = Long.parseLong(phone);
+                students = studentService.findStudentsByPhone(phoneNumber);
+                message = "✅ ค้นหานักเรียนเบอร์โทร " + phone + " (ตรงตัว)";
+            } catch (NumberFormatException e) {
+                // ถ้าแปลงไม่ได้ ให้ค้นหาแบบบางส่วน
+                students = studentService.findStudentsByPhoneContaining(phone);
+                message = "✅ ค้นหานักเรียนเบอร์โทรที่มี '" + phone + "'";
+            }
+            
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("message", message);
+            result.put("data", students);
+            result.put("count", students.size());
+            
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                .body(new StudentResponse(false, "❌ เกิดข้อผิดพลาดในการค้นหา: " + e.getMessage()));
+        }
+    }
+    
+    // Helper method สำหรับการเรียงลำดับ
+    private List<Student> applySort(List<Student> students, String sortBy, String sortDir) {
+        boolean ascending = sortDir == null || !sortDir.equals("desc");
+        
+        switch (sortBy.toLowerCase()) {
+            case "name":
+                students.sort((s1, s2) -> ascending ? 
+                    s1.getName().compareToIgnoreCase(s2.getName()) : 
+                    s2.getName().compareToIgnoreCase(s1.getName()));
+                break;
+            case "age":
+                students.sort((s1, s2) -> ascending ? 
+                    Integer.compare(s1.getAge(), s2.getAge()) : 
+                    Integer.compare(s2.getAge(), s1.getAge()));
+                break;
+            case "email":
+                students.sort((s1, s2) -> ascending ? 
+                    s1.getEmail().compareToIgnoreCase(s2.getEmail()) : 
+                    s2.getEmail().compareToIgnoreCase(s1.getEmail()));
+                break;
+            case "phone":
+                students.sort((s1, s2) -> ascending ? 
+                    Long.compare(s1.getPhone(), s2.getPhone()) : 
+                    Long.compare(s2.getPhone(), s1.getPhone()));
+                break;
+            case "id":
+            default:
+                students.sort((s1, s2) -> ascending ? 
+                    Long.compare(s1.getId(), s2.getId()) : 
+                    Long.compare(s2.getId(), s1.getId()));
+                break;
+        }
+        
+        return students;
+    }
+    
+    // 1.5 GET student by ID
     @GetMapping("/student/{id}")
     public ResponseEntity<StudentResponse> getStudentById(@PathVariable Long id) {
         try {
@@ -126,7 +339,7 @@ public class StudentController {
         }
     }
     
-    // 1.3 PUT student by ID with RequestBody  
+    // 1.7 PUT student by ID with RequestBody  
     @PutMapping("/student/{id}")
     public ResponseEntity<StudentResponse> updateStudentById(@PathVariable Long id, @Valid @RequestBody Student studentDetails) {
         try {

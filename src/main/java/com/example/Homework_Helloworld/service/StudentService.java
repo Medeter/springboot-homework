@@ -61,4 +61,49 @@ public class StudentService {
     public List<Student> findStudentsByAgeRangeAndName(int minAge, int maxAge, String name) {
         return studentRepository.findStudentsByAgeRangeAndName(minAge, maxAge, name);
     }
+    
+    // Methods สำหรับ filter ตามชื่อ
+    public List<Student> findStudentsByNameContaining(String name) {
+        return studentRepository.findByNameContainingIgnoreCase(name);
+    }
+    
+    public List<Student> findStudentsByNameStartingWith(String name) {
+        return studentRepository.findByNameStartingWithIgnoreCase(name);
+    }
+    
+    public List<Student> findStudentsByNameEndingWith(String name) {
+        return studentRepository.findByNameEndingWithIgnoreCase(name);
+    }
+    
+    // Methods สำหรับ filter ตามโทรศัพท์
+    public List<Student> findStudentsByPhone(long phone) {
+        return studentRepository.findByPhone(phone);
+    }
+    
+    public List<Student> findStudentsByPhoneContaining(String phone) {
+        return studentRepository.findByPhoneContaining(phone);
+    }
+    
+    // Method สำหรับ filter แบบซับซ้อน
+    public List<Student> findStudentsWithFilters(String name, String email, Integer minAge, Integer maxAge, Integer exactAge, String phone) {
+        return studentRepository.findStudentsWithFilters(name, email, minAge, maxAge, exactAge, phone);
+    }
+    
+    // Methods สำหรับการเรียงลำดับ
+    public List<Student> getAllStudentsOrderBy(String sortBy, String sortDir) {
+        if (sortDir == null || (!sortDir.equals("asc") && !sortDir.equals("desc"))) {
+            sortDir = "asc";
+        }
+        
+        switch (sortBy) {
+            case "name":
+                return sortDir.equals("asc") ? studentRepository.findAllOrderByNameAsc() : studentRepository.findAllOrderByNameDesc();
+            case "age":
+                return sortDir.equals("asc") ? studentRepository.findAllOrderByAgeAsc() : studentRepository.findAllOrderByAgeDesc();
+            case "id":
+                return sortDir.equals("asc") ? studentRepository.findAllOrderByIdAsc() : studentRepository.findAllOrderByIdDesc();
+            default:
+                return studentRepository.findAllOrderByIdAsc();
+        }
+    }
 }
